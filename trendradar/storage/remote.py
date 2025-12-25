@@ -272,6 +272,36 @@ class RemoteStorageBackend(StorageBackend):
             print(f"[远程存储] 上传失败: {e}")
             return False
 
+    def upload_text_object(self, key: str, content: str, content_type: str = "text/plain; charset=utf-8") -> bool:
+        """
+        上传任意文本对象到远程存储（用于业务侧自定义产物，如 AI 热点原料文件）。
+
+        Args:
+            key: 对象键（支持任意前缀与目录结构）
+            content: 文本内容（UTF-8）
+            content_type: Content-Type
+
+        Returns:
+            是否上传成功
+        """
+        try:
+            body = content.encode("utf-8")
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=key,
+                Body=body,
+                ContentLength=len(body),
+                ContentType=content_type,
+            )
+            if self._check_object_exists(key):
+                print(f"[远程存储] 已上传文本对象: {key}")
+                return True
+            print(f"[远程存储] 上传验证失败: {key}")
+            return False
+        except Exception as e:
+            print(f"[远程存储] 上传文本对象失败: {e}")
+            return False
+
     def _get_connection(self, date: Optional[str] = None) -> sqlite3.Connection:
         """获取数据库连接"""
         local_path = self._get_local_db_path(date)

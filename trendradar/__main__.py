@@ -10,6 +10,7 @@ import os
 import webbrowser
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+from datetime import timedelta
 
 import requests
 
@@ -18,6 +19,12 @@ from trendradar import __version__
 from trendradar.core import load_config
 from trendradar.crawler import DataFetcher
 from trendradar.storage import convert_crawl_results_to_news_data
+from trendradar.ai_hotspots import (
+    build_daily_unique_hotspots,
+    render_ai_hotspots_text,
+    write_ai_hotspots_file,
+    build_r2_key,
+)
 
 
 def check_version_update(
@@ -575,7 +582,96 @@ class NewsAnalyzer:
             title_file = self.ctx.save_titles(results, id_to_name, failed_ids)
             print(f"标题已保存到: {title_file}")
 
+        # 导出“AI 热点原料”（当天新增，相对昨天不重复）并上传到 R2（如果启用）
+        self._export_ai_hotspots(news_data)
+
         return results, id_to_name, failed_ids
+
+    def _export_ai_hotspots(self, today_news_data) -> None:
+        cfg = self.ctx.config.get("AI_EXPORT", {})
+        if not cfg.get("ENABLED"):
+            return
+
+        date_str = self.ctx.format_date()
+        dedupe_days = int(cfg.get("DEDUPE_DAYS", 1) or 1)
+        max_items = int(cfg.get("MAX_ITEMS", 300) or 300)
+
+        # 默认按“昨天”去重（dedupe_days=1）；如果未来要扩展，可调更大
+        dedupe_against_date = None
+        yesterday_data = None
+        if dedupe_days > 0:
+            dedupe_dt = self.ctx.get_time() - timedelta(days=dedupe_days)
+            dedupe_against_date = dedupe_dt.strftime("%Y-%m-%d")
+            try:
+                yesterday_data = self.storage_manager.get_latest_crawl_data(dedupe_against_date)
+            except Exception:
+                yesterday_data = None
+
+        lines, total_candidates = build_daily_unique_hotspots(
+            today_data=today_news_data,
+            yesterday_data=yesterday_data,
+            max_items=max_items,
+        )
+
+        generated_at = self.ctx.get_time()
+        content = render_ai_hotspots_text(
+            lines=lines,
+            date_str=date_str,
+            generated_at=generated_at,
+            dedupe_against_date=dedupe_against_date,
+            total_candidates=total_candidates,
+        )
+
+        local_dir = cfg.get("OUTPUT", {}).get("LOCAL_DIR", "output/ai_hotspots")
+        filename = cfg.get("OUTPUT", {}).get("FILENAME", "hotspots.txt")
+        local_path = write_ai_hotspots_file(
+            local_base_dir=local_dir,
+            date_str=date_str,
+            filename=filename,
+            content=content,
+        )
+        print(f"AI 热点原料已导出: {local_path}")
+
+        # 上传到 R2（可选）
+        r2_cfg = cfg.get("R2", {})
+        if not r2_cfg.get("ENABLED"):
+            return
+
+        remote_cfg = self.ctx.config.get("STORAGE", {}).get("REMOTE", {})
+        if not (
+            remote_cfg.get("BUCKET_NAME")
+            and remote_cfg.get("ACCESS_KEY_ID")
+            and remote_cfg.get("SECRET_ACCESS_KEY")
+            and remote_cfg.get("ENDPOINT_URL")
+        ):
+            print("[AI导出] 未配置远程存储（S3_* 或 storage.remote），跳过上传到 R2")
+            return
+
+        try:
+            from trendradar.storage.remote import RemoteStorageBackend
+
+            remote = RemoteStorageBackend(
+                bucket_name=remote_cfg.get("BUCKET_NAME", ""),
+                access_key_id=remote_cfg.get("ACCESS_KEY_ID", ""),
+                secret_access_key=remote_cfg.get("SECRET_ACCESS_KEY", ""),
+                endpoint_url=remote_cfg.get("ENDPOINT_URL", ""),
+                region=remote_cfg.get("REGION", ""),
+                enable_txt=False,
+                enable_html=False,
+                timezone=self.ctx.config.get("TIMEZONE", "Asia/Shanghai"),
+            )
+
+            r2_prefix = r2_cfg.get("PREFIX", "ai-hotspots")
+            r2_filename = r2_cfg.get("FILENAME", filename)
+            key = build_r2_key(r2_prefix, date_str, r2_filename)
+
+            if remote.upload_text_object(key, content):
+                print(f"AI 热点原料已上传到 R2: {key}")
+            else:
+                print(f"[AI导出] 上传到 R2 失败: {key}")
+
+        except Exception as e:
+            print(f"[AI导出] 初始化或上传失败: {e}")
 
     def _execute_mode_strategy(
         self, mode_strategy: Dict, results: Dict, id_to_name: Dict, failed_ids: List

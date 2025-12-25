@@ -163,6 +163,31 @@ def _load_storage_config(config_data: Dict) -> Dict:
     }
 
 
+def _load_ai_export_config(config_data: Dict) -> Dict:
+    """加载 AI 热点导出配置（给 Step3/Step4 用的“原料文本”）"""
+    ai_export = config_data.get("ai_export", {})
+    output_cfg = ai_export.get("output", {})
+    r2_cfg = ai_export.get("r2", {})
+
+    enabled_env = _get_env_bool("AI_EXPORT_ENABLED")
+    r2_enabled_env = _get_env_bool("AI_EXPORT_R2_ENABLED")
+
+    return {
+        "ENABLED": enabled_env if enabled_env is not None else ai_export.get("enabled", False),
+        "MAX_ITEMS": _get_env_int("AI_EXPORT_MAX_ITEMS") or ai_export.get("max_items", 300),
+        "DEDUPE_DAYS": _get_env_int("AI_EXPORT_DEDUPE_DAYS") or ai_export.get("dedupe_days", 1),
+        "OUTPUT": {
+            "LOCAL_DIR": _get_env_str("AI_EXPORT_LOCAL_DIR") or output_cfg.get("local_dir", "output/ai_hotspots"),
+            "FILENAME": _get_env_str("AI_EXPORT_FILENAME") or output_cfg.get("filename", "hotspots.txt"),
+        },
+        "R2": {
+            "ENABLED": r2_enabled_env if r2_enabled_env is not None else r2_cfg.get("enabled", False),
+            "PREFIX": _get_env_str("AI_EXPORT_R2_PREFIX") or r2_cfg.get("prefix", "ai-hotspots"),
+            "FILENAME": _get_env_str("AI_EXPORT_R2_FILENAME") or r2_cfg.get("filename", "hotspots.txt"),
+        },
+    }
+
+
 def _load_webhook_config(config_data: Dict) -> Dict:
     """加载 Webhook 配置"""
     notification = config_data.get("notification", {})
@@ -322,6 +347,9 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
 
     # 存储配置
     config["STORAGE"] = _load_storage_config(config_data)
+
+    # AI 热点导出配置
+    config["AI_EXPORT"] = _load_ai_export_config(config_data)
 
     # Webhook 配置
     config.update(_load_webhook_config(config_data))
