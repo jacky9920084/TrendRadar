@@ -1,0 +1,23 @@
+# binaries
+*.exe
+*.dll
+*.pdb
+
+# python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# virtualenv / tooling cache
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# project generated outputs (treat as cache)
+output/
+
+# logs
+*.log
+logs/
