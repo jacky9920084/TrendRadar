@@ -59,6 +59,17 @@ python -m venv .venv
 - 推荐方式：单独把 `E:\cursor\video_spider` 作为第三个仓库维护并在本机启动服务
 - 目标：保证 `http://127.0.0.1:8080/analysis` 可用
 
+如果你不想再单独维护 `video_spider` 仓库，本仓库也内置了一个可直接运行的二进制（Windows）：
+
+- `E:\cursor\TrendRadar\tools\video_spider\analysis.exe`
+
+运行方式（建议单独开一个 PowerShell 窗口常驻）：
+
+```powershell
+cd E:\cursor\TrendRadar\tools\video_spider
+.\analysis.exe
+```
+
 ## 本机一键跑（推荐）
 
 每天跑一次（会写日志到 `output\`）：
