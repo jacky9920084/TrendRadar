@@ -2,6 +2,7 @@ param(
   [string]$ProjectDir = (Split-Path -Parent $MyInvocation.MyCommand.Path),
   [string]$PythonExe = "python",
   [string]$R2InfoFile = "",
+  [string]$Date = "",
   [switch]$ValidateOnly
 )
 
@@ -19,6 +20,12 @@ function Read-Utf8Text {
   return [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8)
 }
 
+function Get-ShanghaiIsoDate {
+  $tz = [TimeZoneInfo]::FindSystemTimeZoneById("China Standard Time")
+  $now = [TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, $tz)
+  return $now.ToString("yyyy-MM-dd")
+}
+
 function Get-JsonValueFromText {
   param(
     [Parameter(Mandatory = $true)][string]$Text,
@@ -30,6 +37,13 @@ function Get-JsonValueFromText {
 }
 
 Set-Location $ProjectDir
+
+$venvPython = Join-Path $ProjectDir ".venv\\Scripts\\python.exe"
+if ($PythonExe -eq "python" -and (Test-Path -LiteralPath $venvPython)) {
+  $PythonExe = $venvPython
+}
+
+$effectiveDate = if ($Date) { $Date } elseif ($env:DATE) { $env:DATE } else { Get-ShanghaiIsoDate }
 
 if (-not $R2InfoFile) {
   $candidates = Get-ChildItem -LiteralPath $ProjectDir -File -Filter "*.md" | Where-Object { $_.Name -match "(?i)r2|s3" }
@@ -86,4 +100,22 @@ $env:S3_ACCESS_KEY_ID = $ak
 $env:S3_SECRET_ACCESS_KEY = $sk
 $env:S3_REGION = $region
 
+# TopHub key（用于网易等新源 merge 进主清单；不要写死到仓库）
+if (-not $env:TOPHUB_API_KEY) {
+  $localKeyPath = Join-Path $ProjectDir "config\\tophub_api_key.local.txt"
+  if (Test-Path -LiteralPath $localKeyPath) {
+    try { $env:TOPHUB_API_KEY = (Read-Utf8Text -Path $localKeyPath).Trim() } catch {}
+  }
+}
+
 & $PythonExe -m trendradar
+
+# 抖音主源切换：用 TopHub 抖音榜单替换旧源抖音短链（其他平台不变），确保后续可按 videoId 命中增强材料。
+& $PythonExe .\\merge_douyin_into_hotspots.py --date $effectiveDate
+
+# 网易新闻补充：将 TopHub「网易新闻实时热榜」合并进主清单（保持主清单总条数不变），让 Step3/4 真正用到。
+if ($env:TOPHUB_API_KEY) {
+  & $PythonExe .\\merge_netease_into_hotspots.py --date $effectiveDate --hashid ENeYa4DeY4 --platform 网易新闻 --limit 20 --keep-total 0
+} else {
+  Write-Output "skip merge_netease_into_hotspots: missing TOPHUB_API_KEY (set env var or create config\\tophub_api_key.local.txt)"
+}

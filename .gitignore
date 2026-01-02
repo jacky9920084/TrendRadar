@@ -1,23 +1,32 @@
-# binaries
-*.exe
-*.dll
-*.pdb
-
-# python cache
-__pycache__/
-*.py[cod]
-*$py.class
-
-# virtualenv / tooling cache
+# Python
 .venv/
-venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+__pycache__/
+**/__pycache__/
+*.pyc
 
-# project generated outputs (treat as cache)
+# Local outputs / logs
 output/
-
-# logs
 *.log
-logs/
+*.db
+
+# Local secrets (do NOT commit)
+config/*.local.*
+config/*_local.*
+config/*secrets*
+config/*secret*
+config/tophub_api_key.local.txt
+上传r2储存桶*
+r2*.local.*
+
+# Build artifacts (upstream)
+.theos/
+packages/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
